@@ -1,0 +1,5 @@
+key_name         = "rgimadiev"
+ami_id           = "ami-0a34fd0e2116fbf48"
+instance_type    = "t2.micro"
+jenkins_user     = "admin"
+jenkins_password = "12345"
