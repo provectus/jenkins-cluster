@@ -3,8 +3,6 @@ provider "aws" {
   region  = "us-east-2"
 }
 
-
-
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "v2.7.0"
@@ -118,17 +116,68 @@ data "aws_iam_policy_document" "jenkins" {
   }
 }
 
-resource "aws_instance" "jenkins" {
-  count                  = length(module.vpc.azs)
-  availability_zone      = module.vpc.azs[count.index]
-  ami                    = data.aws_ami.image.id
-  instance_type          = var.instance_type
-  iam_instance_profile   = aws_iam_instance_profile.instance_profile.name
-  subnet_id              = module.vpc.public_subnets[count.index]
-  vpc_security_group_ids = [module.vpc.default_security_group_id]
-  key_name               = var.key_name
-  tags                   = merge(var.tags, { "Name" = var.cluster_name })
-  user_data              = templatefile("${path.module}/scripts/jenkins.sh", { "efs_fqdn" = aws_efs_mount_target.main.0.dns_name, "eip" = aws_eip.lb.public_ip, "eip_allocation" = aws_eip.lb.id, "user" = var.jenkins_user, "password" = var.jenkins_password, "cluster_name" = var.cluster_name })
+resource "aws_network_interface" "jenkins" {
+  count           = length(module.vpc.azs)
+  subnet_id       = module.vpc.public_subnets[count.index]
+  private_ips     = [cidrhost(var.vpc_public_subnets[count.index], "10")]
+  security_groups = [module.vpc.default_security_group_id]
 }
 
-resource "aws_eip" "lb" {}
+resource "aws_launch_template" "jenkins" {
+  count = length(module.vpc.azs)
+  name  = "jenkins${count.index}"
+  image_id      = data.aws_ami.image.id
+  instance_type = var.instance_type
+  iam_instance_profile {
+    name = aws_iam_instance_profile.instance_profile.name
+  }
+  network_interfaces {
+    network_interface_id        = aws_network_interface.jenkins[count.index].id
+  }
+
+  key_name = var.key_name
+  tag_specifications {
+    resource_type = "instance"
+    tags = merge(var.tags, { "Name" = var.cluster_name })
+  }
+  user_data = base64encode(templatefile("${path.module}/scripts/jenkins.sh", { "efs_fqdn" = aws_efs_mount_target.main.0.dns_name, "eip" = aws_eip.lb.public_ip, "eip_allocation" = aws_eip.lb.id, "user" = var.jenkins_user, "password" = var.jenkins_password, "cluster_name" = var.cluster_name }))
+}
+
+resource "aws_eip" "lb" {
+  tags = merge(var.tags, { "Name" = "LB" })
+}
+
+resource "aws_ec2_fleet" "jenkins" {
+  count = length(module.vpc.azs)
+  launch_template_config {
+    launch_template_specification {
+      launch_template_id = aws_launch_template.jenkins[count.index].id
+      version            = aws_launch_template.jenkins[count.index].latest_version
+    }
+  }
+  type = "maintain"
+  target_capacity_specification {
+    default_target_capacity_type = "on-demand"
+    total_target_capacity = 1
+  }
+}
+
+data "aws_iam_role" "spot_fleet" {
+  name = "aws-ec2-spot-fleet-tagging-role"
+}
+
+resource "aws_spot_fleet_request" "jenkins-agent" {
+  iam_fleet_role  = data.aws_iam_role.spot_fleet.arn
+  target_capacity = 2
+  valid_until     = "2119-01-01T00:00:00Z"
+
+  launch_specification {
+    instance_type          = "t3.medium"
+    ami                    = data.aws_ami.image.id
+    key_name               = var.key_name
+    vpc_security_group_ids = [module.vpc.default_security_group_id]
+    subnet_id              = module.vpc.public_subnets[0]
+    user_data              = base64encode(file("${path.module}/scripts/jenkins-agent.sh"))
+    tags                   = merge(var.tags, { "Name" = "${var.cluster_name}-agent" })
+  }
+}

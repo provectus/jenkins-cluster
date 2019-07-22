@@ -33,22 +33,6 @@ Location to store the resource state in.
 <content type="string" default="${HA_RSCTMP}/Jenkins-${OCF_RESOURCE_INSTANCE}.state" />
 </parameter>
 
-<parameter name="login" unique="0">
-<longdesc lang="en">
-A admin user name for local Jenkins instance
-</longdesc>
-<shortdesc lang="en">A admin user name for local Jenkins instance</shortdesc>
-<content type="string" default="jenkins" />
-</parameter>
-
-<parameter name="password" unique="0">
-<longdesc lang="en">
-A admin user password for local Jenkins instance
-</longdesc>
-<shortdesc lang="en">A admin user password for local Jenkins instance</shortdesc>
-<content type="string" default="jenkins" />
-</parameter>
-
 </parameters>
 
 <actions>
@@ -77,7 +61,7 @@ END
 
 jenkins_start() {
     jenkins_monitor
-    java -jar /var/cache/jenkins/war/WEB-INF/jenkins-cli.jar -s http://127.0.0.1:8080 -auth ${OCF_RESKEY_login}:${OCF_RESKEY_password} reload-configuration
+    systemctl restart jenkins
     if [ $? =  $OCF_SUCCESS ]; then
   return $OCF_SUCCESS
     fi
