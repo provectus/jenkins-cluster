@@ -124,21 +124,21 @@ resource "aws_network_interface" "jenkins" {
 }
 
 resource "aws_launch_template" "jenkins" {
-  count = length(module.vpc.azs)
-  name  = "jenkins${count.index}"
+  count         = length(module.vpc.azs)
+  name          = "jenkins${count.index}"
   image_id      = data.aws_ami.image.id
   instance_type = var.instance_type
   iam_instance_profile {
     name = aws_iam_instance_profile.instance_profile.name
   }
   network_interfaces {
-    network_interface_id        = aws_network_interface.jenkins[count.index].id
+    network_interface_id = aws_network_interface.jenkins[count.index].id
   }
 
   key_name = var.key_name
   tag_specifications {
     resource_type = "instance"
-    tags = merge(var.tags, { "Name" = var.cluster_name })
+    tags          = merge(var.tags, { "Name" = var.cluster_name })
   }
   user_data = base64encode(templatefile("${path.module}/scripts/jenkins.sh", { "efs_fqdn" = aws_efs_mount_target.main.0.dns_name, "eip" = aws_eip.lb.public_ip, "eip_allocation" = aws_eip.lb.id, "user" = var.jenkins_user, "password" = var.jenkins_password, "cluster_name" = var.cluster_name }))
 }
@@ -158,7 +158,7 @@ resource "aws_ec2_fleet" "jenkins" {
   type = "maintain"
   target_capacity_specification {
     default_target_capacity_type = "on-demand"
-    total_target_capacity = 1
+    total_target_capacity        = 1
   }
 }
 
