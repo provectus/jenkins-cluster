@@ -1,0 +1,6 @@
+---
+- hosts: all
+  become: yes
+  tasks:
+    - name: Install Java
+      include: "{{ ansible_os_family }}.yml"
