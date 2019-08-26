@@ -3,7 +3,6 @@
     {
       "name": "ubuntu",
       "type": "amazon-ebs",
-      "region": "us-west-2",
       "source_ami_filter": {
         "filters": {
           "virtualization-type": "hvm",
@@ -24,8 +23,7 @@
       },
       "vpc_filter": {
         "filters": {
-          "tag:Class": "build",
-          "isDefault": "false"
+          "tag:Class": "build"
         }
       },
       "run_tags": {
@@ -39,7 +37,6 @@
     {
       "name": "rhel",
       "type": "amazon-ebs",
-      "region": "us-west-2",
       "source_ami_filter": {
         "filters": {
           "virtualization-type": "hvm",
@@ -60,8 +57,7 @@
       },
       "vpc_filter": {
         "filters": {
-          "tag:Class": "build",
-          "isDefault": "false"
+          "tag:Class": "build"
         }
       },
       "run_tags": {

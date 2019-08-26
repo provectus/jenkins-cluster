@@ -1,0 +1,23 @@
+- name: Ensure Jenkins repo is installed.
+  get_url:
+    url: https://pkg.jenkins.io/redhat/jenkins.repo
+    dest: /etc/yum.repos.d/jenkins.repo
+    timeout: 60
+    validate_certs: no
+
+- name: Add Jenkins repo GPG key.
+  rpm_key:
+    state: present
+    key: https://pkg.jenkins.io/redhat/jenkins.io.key
+
+- name: Download specific Jenkins version.
+  get_url:
+    url: "https://pkg.jenkins.io/redhat/jenkins-{{ jenkins_version }}-1.1.noarch.rpm"
+    dest: "/tmp/jenkins-{{ jenkins_version }}-1.1.noarch.rpm"
+    timeout: 60
+    validate_certs: no
+
+- name: Install our specific version of Jenkins.
+  command: "yum install -y /tmp/jenkins-{{ jenkins_version }}-1.1.noarch.rpm"
+  args:
+    warn: false

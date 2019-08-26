@@ -5,28 +5,35 @@ provider "aws" {
 
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "v2.7.0"
+  version = "v2.9.0"
 
   name = "jenkins"
   cidr = var.vpc_cidr
 
-  azs                  = var.vpc_azs
-  private_subnets      = var.vpc_private_subnets
-  public_subnets       = var.vpc_public_subnets
+  azs                  = var.azs
+  public_subnets       = var.public_subnets
   enable_dns_hostnames = true
   enable_dns_support   = true
-  enable_nat_gateway   = true
-  enable_vpn_gateway   = false
-
-  tags = var.tags
+  create_vpc           = true
+  tags                 = var.tags
 }
 
-data "aws_ami" "image" {
+data "aws_caller_identity" "current" {}
+
+data "aws_ami" "agent" {
+  filter {
+    name   = "image-id"
+    values = [var.agent_ami_id]
+  }
+  owners = [data.aws_caller_identity.current.account_id]
+}
+
+data "aws_ami" "controller" {
   filter {
     name   = "image-id"
     values = [var.ami_id]
   }
-  owners = ["099720109477"] # Canonical
+  owners = [data.aws_caller_identity.current.account_id]
 }
 
 resource "aws_efs_file_system" "main" {
@@ -119,14 +126,14 @@ data "aws_iam_policy_document" "jenkins" {
 resource "aws_network_interface" "jenkins" {
   count           = length(module.vpc.azs)
   subnet_id       = module.vpc.public_subnets[count.index]
-  private_ips     = [cidrhost(var.vpc_public_subnets[count.index], "10")]
+  private_ips     = [cidrhost(var.public_subnets[count.index], "10")]
   security_groups = [module.vpc.default_security_group_id]
 }
 
 resource "aws_launch_template" "jenkins" {
   count         = length(module.vpc.azs)
   name          = "jenkins${count.index}"
-  image_id      = data.aws_ami.image.id
+  image_id      = data.aws_ami.controller.id
   instance_type = var.instance_type
   iam_instance_profile {
     name = aws_iam_instance_profile.instance_profile.name
@@ -140,7 +147,7 @@ resource "aws_launch_template" "jenkins" {
     resource_type = "instance"
     tags          = merge(var.tags, { "Name" = var.cluster_name })
   }
-  user_data = base64encode(templatefile("${path.module}/scripts/jenkins.sh", { "efs_fqdn" = aws_efs_mount_target.main.0.dns_name, "eip" = aws_eip.lb.public_ip, "eip_allocation" = aws_eip.lb.id, "user" = var.jenkins_user, "password" = var.jenkins_password, "cluster_name" = var.cluster_name }))
+  user_data = base64encode(templatefile("${path.module}/scripts/user_data.sh", { "EFS_ENDPOINT" = aws_efs_mount_target.main.0.dns_name, "ELASTIC_IP" = aws_eip.lb.public_ip, "ELASTIC_IP_ALLOCATION" = aws_eip.lb.id, "JENKINS_HOME" = "/mnt/jenkins", "NODELIST" = join("\n", [for ip in aws_network_interface.jenkins : "node: {\nring0_addr: ${ip.private_ip}\n}"]), "CLUSTER_SIZE" = length(aws_network_interface.jenkins) }))
 }
 
 resource "aws_eip" "lb" {
@@ -173,11 +180,10 @@ resource "aws_spot_fleet_request" "jenkins-agent" {
 
   launch_specification {
     instance_type          = "t3.medium"
-    ami                    = data.aws_ami.image.id
+    ami                    = data.aws_ami.agent.id
     key_name               = var.key_name
     vpc_security_group_ids = [module.vpc.default_security_group_id]
     subnet_id              = module.vpc.public_subnets[0]
-    user_data              = base64encode(file("${path.module}/scripts/jenkins-agent.sh"))
     tags                   = merge(var.tags, { "Name" = "${var.cluster_name}-agent" })
   }
 }

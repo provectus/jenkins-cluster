@@ -1,4 +1,0 @@
-- name: Install OpenJDK
-  package:
-    name: openjdk-8-jre
-    state: present

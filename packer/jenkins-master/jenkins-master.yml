@@ -1,6 +1,100 @@
 ---
 - hosts: all
   become: yes
+  vars:
+    jenkins_home: /mnt/jenkins_home
+    jenkins_version: 2.164
+    jenkins_plugins:
+      - docker-java-api
+      - build-pipeline-plugin
+      - build-user-vars-plugin
   tasks:
-    - name: Install Java
-      include: "{{ ansible_os_family }}.yml"
+    - ec2_metadata_facts:
+    - block:
+        - apt:
+            name:
+              - curl
+              - apt-transport-https
+              - openjdk-8-jdk
+            update_cache: true
+            state: present
+        - include: ubuntu/ha.yml
+        - include: ubuntu/jenkins.yml
+      when: ansible_os_family == "Debian"
+    - block:
+        - command: yum install -y java-1.8.0-openjdk-devel
+          args:
+            warn: false
+        - include: redhat/ha.yml
+        - include: redhat/jenkins.yml
+      when: ansible_os_family == "RedHat"
+
+    - name: Create Jenkins config
+      copy:
+        src: files/config.xml
+        dest: /var/lib/jenkins/config.xml
+        owner: jenkins
+        group: jenkins
+        mode: '0755'
+        backup: yes
+
+    - name: Create OCF resources
+      copy:
+        src: "files/{{ item }}.resource"
+        dest: "/usr/lib/ocf/resource.d/heartbeat/{{ item }}"
+        owner: root
+        group: root
+        mode: '0755'
+        backup: yes
+      with_items:
+        - jenkins
+        - awseip
+
+    - name: Create Corosync config template
+      copy:
+        src: files/corosync.conf.tpl
+        dest: /etc/corosync/corosync.conf.tpl
+        owner: root
+        group: root
+        mode: '0755'
+        backup: yes
+
+    - name: Set OCF_ROOT
+      lineinfile:
+        path: "/etc/{{ {'RedHat': 'sysconfig', 'Debian': 'default'}[ansible_os_family] }}/pacemaker"
+        state: present
+        line: 'OCF_ROOT=/usr/lib/ocf'
+
+    - name: Set AWS region
+      lineinfile:
+        path: "/etc/{{ {'RedHat': 'sysconfig', 'Debian': 'default'}[ansible_os_family] }}/pacemaker"
+        state: present
+        line: 'AWS_DEFAULT_REGION={{ ansible_ec2_placement_region }}'
+
+    - name: Skip Setup Wizard.
+      lineinfile:
+        dest: "/etc/{{ {'RedHat': 'sysconfig', 'Debian': 'default'}[ansible_os_family] }}/jenkins"
+        regexp: "^{{ {'RedHat': 'JENKINS_JAVA_OPTIONS', 'Debian': 'JAVA_ARGS'}[ansible_os_family] }}="
+        line: "{{ {'RedHat': 'JENKINS_JAVA_OPTIONS', 'Debian': 'JAVA_ARGS'}[ansible_os_family] }}=\"-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false\""
+
+    - name: Restart Jenkins
+      service:
+        name: jenkins
+        state: restarted
+
+    - name: Wait for Jenkins to start up.
+      uri:
+        url: http://localhost:8080
+        status_code: 200
+        timeout: 5
+      register: jenkins_service_status
+      retries: 60
+      delay: 5
+      until: >
+        'status' in jenkins_service_status and
+        jenkins_service_status['status'] == 200
+
+    - name: Install plugins.
+      jenkins_plugin:
+        name: "{{ item }}"
+      with_items: "{{ jenkins_plugins }}"
