@@ -18,6 +18,15 @@
   args:
     warn: false
 
+- name: Enable services
+  service:
+    name: "{{ item }}"
+    state: stopped
+    enabled: true
+  with_items:
+    - pacemaker
+    - corosync
+
 - get_url:
     url: https://bootstrap.pypa.io/get-pip.py
     dest: /tmp/get-pip.py

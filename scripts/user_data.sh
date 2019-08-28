@@ -16,4 +16,4 @@ systemctl restart corosync pacemaker
 
 pcs property set stonith-enabled=false
 pcs resource create elastic-ip ocf:heartbeat:awseip elastic_ip="${ELASTIC_IP}" awscli="$(which aws)" allocation_id="${ELASTIC_IP_ALLOCATION}" op start   timeout="10s" interval="0s" on-fail="restart" op monitor timeout="10s" interval="1s" on-fail="restart" op stop timeout="10s" interval="0s" on-fail="block" meta migration-threshold="2" failure-timeout="10s" resource-stickiness="100" --group jenkins-master
-pcs resource create jenkins ocf:heartbeat:jenkins --group jenkins-master
+pcs resource create jenkins ocf:heartbeat:jenkins op start   timeout="10s" interval="0s" on-fail="restart" op monitor timeout="10s" interval="1s" on-fail="restart" op stop timeout="10s" interval="0s" on-fail="block" meta migration-threshold="2" failure-timeout="10s" resource-stickiness="100" --group jenkins-master
