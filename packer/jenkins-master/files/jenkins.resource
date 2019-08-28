@@ -61,7 +61,7 @@ END
 
 jenkins_start() {
     jenkins_monitor
-    systemctl restart jenkins
+    systemctl start jenkins
     if [ $? =  $OCF_SUCCESS ]; then
   return $OCF_SUCCESS
     fi
@@ -70,6 +70,7 @@ jenkins_start() {
 
 jenkins_stop() {
     jenkins_monitor
+    systemctl stop jenkins
     if [ $? =  $OCF_SUCCESS ]; then
   rm ${OCF_RESKEY_state}
     fi
@@ -77,7 +78,9 @@ jenkins_stop() {
 }
 
 jenkins_monitor() {
-  if [ -f ${OCF_RESKEY_state} ]; then
+  systemctl status jenkins
+  RESCODE=$?
+  if [ "${RESCODE}" == "0" ]; then
       return $OCF_SUCCESS
   fi
   if false ; then

@@ -1,39 +1,41 @@
-provider "aws" {
+provider aws {
   version = "2.18.0"
   region  = "us-east-2"
 }
 
-module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "v2.7.0"
+module vpc {
+  source = "terraform-aws-modules/vpc/aws"
 
-  name = "jenkins"
-  cidr = var.vpc_cidr
-
-  azs                  = var.vpc_azs
-  private_subnets      = var.vpc_private_subnets
-  public_subnets       = var.vpc_public_subnets
-  enable_dns_hostnames = true
-  enable_dns_support   = true
-  enable_nat_gateway   = true
-  enable_vpn_gateway   = false
-
-  tags = var.tags
+  name                             = "jenkins"
+  cidr                             = var.vpc_cidr
+  azs                              = var.azs
+  public_subnets                   = var.subnets
+  map_public_ip_on_launch          = false
+  enable_ec2_endpoint              = true
+  ec2_endpoint_private_dns_enabled = true
+  ec2_endpoint_security_group_ids  = [module.vpc.vpc_id]
+  ec2_endpoint_subnet_ids          = module.vpc.public_subnets
+  enable_dns_hostnames             = true
+  enable_dns_support               = true
+  create_vpc                       = true
+  tags                             = var.tags
 }
 
-data "aws_ami" "image" {
+data aws_caller_identity current {}
+
+data aws_ami controller {
   filter {
     name   = "image-id"
     values = [var.ami_id]
   }
-  owners = ["099720109477"] # Canonical
+  owners = [data.aws_caller_identity.current.account_id]
 }
 
-resource "aws_efs_file_system" "main" {
+resource aws_efs_file_system main {
   tags = var.tags
 }
 
-resource "aws_efs_mount_target" "main" {
+resource aws_efs_mount_target main {
   count = length(module.vpc.azs)
 
   file_system_id = aws_efs_file_system.main.id
@@ -44,7 +46,7 @@ resource "aws_efs_mount_target" "main" {
   ]
 }
 
-resource "aws_security_group" "efs" {
+resource aws_security_group efs {
   name        = "efs"
   description = "Allows NFS traffic from instances within the VPC."
   vpc_id      = module.vpc.vpc_id
@@ -72,15 +74,15 @@ resource "aws_security_group" "efs" {
   tags = var.tags
 }
 
-resource "aws_iam_instance_profile" "instance_profile" {
+resource aws_iam_instance_profile instance_profile {
   role = aws_iam_role.instance_role.name
 }
 
-resource "aws_iam_role" "instance_role" {
+resource aws_iam_role instance_role {
   assume_role_policy = data.aws_iam_policy_document.instance_role.json
 }
 
-data "aws_iam_policy_document" "instance_role" {
+data aws_iam_policy_document instance_role {
   statement {
     effect  = "Allow"
     actions = ["sts:AssumeRole"]
@@ -93,13 +95,13 @@ data "aws_iam_policy_document" "instance_role" {
 }
 
 
-resource "aws_iam_role_policy" "jenkins" {
+resource aws_iam_role_policy jenkins {
   name   = "jenkins-cluster-node"
   role   = aws_iam_role.instance_role.id
   policy = data.aws_iam_policy_document.jenkins.json
 }
 
-data "aws_iam_policy_document" "jenkins" {
+data aws_iam_policy_document jenkins {
   statement {
     effect = "Allow"
 
@@ -116,23 +118,24 @@ data "aws_iam_policy_document" "jenkins" {
   }
 }
 
-resource "aws_network_interface" "jenkins" {
+resource aws_network_interface jenkins {
   count           = length(module.vpc.azs)
   subnet_id       = module.vpc.public_subnets[count.index]
-  private_ips     = [cidrhost(var.vpc_public_subnets[count.index], "10")]
+  private_ips     = [cidrhost(var.subnets[count.index], "10")]
   security_groups = [module.vpc.default_security_group_id]
 }
 
-resource "aws_launch_template" "jenkins" {
+resource aws_launch_template jenkins {
   count         = length(module.vpc.azs)
   name          = "jenkins${count.index}"
-  image_id      = data.aws_ami.image.id
+  image_id      = data.aws_ami.controller.id
   instance_type = var.instance_type
   iam_instance_profile {
     name = aws_iam_instance_profile.instance_profile.name
   }
   network_interfaces {
-    network_interface_id = aws_network_interface.jenkins[count.index].id
+    associate_public_ip_address = false
+    network_interface_id        = aws_network_interface.jenkins[count.index].id
   }
 
   key_name = var.key_name
@@ -140,15 +143,16 @@ resource "aws_launch_template" "jenkins" {
     resource_type = "instance"
     tags          = merge(var.tags, { "Name" = var.cluster_name })
   }
-  user_data = base64encode(templatefile("${path.module}/scripts/jenkins.sh", { "efs_fqdn" = aws_efs_mount_target.main.0.dns_name, "eip" = aws_eip.lb.public_ip, "eip_allocation" = aws_eip.lb.id, "user" = var.jenkins_user, "password" = var.jenkins_password, "cluster_name" = var.cluster_name }))
+  user_data = base64encode(templatefile("${path.module}/scripts/user_data.sh", { "EFS_ENDPOINT" = aws_efs_mount_target.main.0.dns_name, "ELASTIC_IP" = aws_eip.lb.public_ip, "ELASTIC_IP_ALLOCATION" = aws_eip.lb.id, "JENKINS_HOME" = "/mnt/jenkins", "NODELIST" = join("\n", [for ip in aws_network_interface.jenkins : "node: {\nring0_addr: ${ip.private_ip}\n}"]), "CLUSTER_SIZE" = length(aws_network_interface.jenkins) }))
 }
 
-resource "aws_eip" "lb" {
+resource aws_eip lb {
   tags = merge(var.tags, { "Name" = "LB" })
 }
 
-resource "aws_ec2_fleet" "jenkins" {
-  count = length(module.vpc.azs)
+resource aws_ec2_fleet jenkins {
+  count               = length(module.vpc.azs)
+  terminate_instances = true
   launch_template_config {
     launch_template_specification {
       launch_template_id = aws_launch_template.jenkins[count.index].id
@@ -162,22 +166,46 @@ resource "aws_ec2_fleet" "jenkins" {
   }
 }
 
-data "aws_iam_role" "spot_fleet" {
-  name = "aws-ec2-spot-fleet-tagging-role"
+resource aws_lb_target_group main {
+  name        = var.cluster_name
+  port        = 8080
+  protocol    = "HTTP"
+  target_type = "ip"
+  vpc_id      = module.vpc.vpc_id
+  health_check {
+    path                = "/login"
+    interval            = 5
+    unhealthy_threshold = 2
+    healthy_threshold   = 2
+    timeout             = 5
+    matcher             = "200,301,307"
+  }
+  stickiness {
+    type    = "lb_cookie"
+    enabled = false
+  }
 }
 
-resource "aws_spot_fleet_request" "jenkins-agent" {
-  iam_fleet_role  = data.aws_iam_role.spot_fleet.arn
-  target_capacity = 2
-  valid_until     = "2119-01-01T00:00:00Z"
+resource aws_lb_target_group_attachment main {
+  count            = length(module.vpc.azs)
+  target_group_arn = aws_lb_target_group.main.arn
+  target_id        = aws_network_interface.jenkins[count.index].private_ip
+}
 
-  launch_specification {
-    instance_type          = "t3.medium"
-    ami                    = data.aws_ami.image.id
-    key_name               = var.key_name
-    vpc_security_group_ids = [module.vpc.default_security_group_id]
-    subnet_id              = module.vpc.public_subnets[0]
-    user_data              = base64encode(file("${path.module}/scripts/jenkins-agent.sh"))
-    tags                   = merge(var.tags, { "Name" = "${var.cluster_name}-agent" })
+resource aws_lb main {
+  name               = var.cluster_name
+  internal           = false
+  load_balancer_type = "application"
+  subnets            = module.vpc.public_subnets
+}
+
+resource aws_lb_listener main {
+  load_balancer_arn = aws_lb.main.arn
+  port              = 80
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.main.arn
   }
 }

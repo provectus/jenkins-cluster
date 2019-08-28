@@ -1,0 +1,86 @@
+{
+  "builders": [
+    {
+      "name": "ubuntu",
+      "type": "amazon-ebs",
+      "source_ami_filter": {
+        "filters": {
+          "virtualization-type": "hvm",
+          "name": "ubuntu/images/*ubuntu-bionic-18.04-amd64-server-*",
+          "root-device-type": "ebs"
+        },
+        "owners": [
+          "099720109477"
+        ],
+        "most_recent": true
+      },
+      "subnet_filter": {
+        "filters": {
+          "tag:Class": "build"
+        },
+        "most_free": true,
+        "random": false
+      },
+      "vpc_filter": {
+        "filters": {
+          "tag:Class": "build"
+        }
+      },
+      "run_tags": {
+        "Name": "Packer: Jenkins Agent [UBUNTU]"
+      },
+      "associate_public_ip_address": true,
+      "instance_type": "t3.medium",
+      "ssh_username": "ubuntu",
+      "ami_name": "jenkins-agent-ubuntu-bionic-{{timestamp}}"
+    },
+    {
+      "name": "rhel",
+      "type": "amazon-ebs",
+      "source_ami_filter": {
+        "filters": {
+          "virtualization-type": "hvm",
+          "name": "RHEL-8.0.0_HVM-*",
+          "root-device-type": "ebs"
+        },
+        "owners": [
+          "309956199498"
+        ],
+        "most_recent": true
+      },
+      "subnet_filter": {
+        "filters": {
+          "tag:Class": "build"
+        },
+        "most_free": true,
+        "random": false
+      },
+      "vpc_filter": {
+        "filters": {
+          "tag:Class": "build"
+        }
+      },
+      "run_tags": {
+        "Name": "Packer: Jenkins Agent [RHEL]"
+      },
+      "associate_public_ip_address": true,
+      "instance_type": "t3.medium",
+      "ssh_username": "ec2-user",
+      "ami_name": "jenkins-agent-rhel-8.0.0-{{timestamp}}"
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "shell",
+      "inline": ["sudo `which yum || which apt-get || exit 1` install -y python3"]
+    },
+    {
+      "type": "ansible",
+      "playbook_file": "./jenkins-agent.yml",
+      "extra_arguments": [
+        "--extra-vars",
+        "ansible_python_interpreter=/usr/bin/python3"
+      ]
+    }
+  ]
+}

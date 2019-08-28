@@ -1,0 +1,78 @@
+{
+  "builders": [
+    {
+      "name": "ubuntu",
+      "type": "amazon-ebs",
+      "source_ami_filter": {
+        "filters": {
+          "virtualization-type": "hvm",
+          "name": "ubuntu/images/*ubuntu-bionic-18.04-amd64-server-*",
+          "root-device-type": "ebs"
+        },
+        "owners": [
+          "099720109477"
+        ],
+        "most_recent": true
+      },
+      "subnet_filter": {
+        "filters": {
+          "tag:Class": "build"
+        },
+        "most_free": true,
+        "random": false
+      },
+      "vpc_filter": {
+        "filters": {
+          "tag:Class": "build"
+        }
+      },
+      "run_tags": {
+        "Name": "Packer: Jenkins Master [UBUNTU]"
+      },
+      "associate_public_ip_address": true,
+      "instance_type": "t3.medium",
+      "ssh_username": "ubuntu",
+      "ami_name": "jenkins-master-ubuntu-bionic-{{timestamp}}"
+    },
+    {
+      "name": "rhel",
+      "type": "amazon-ebs",
+      "source_ami_filter": {
+        "filters": {
+          "virtualization-type": "hvm",
+          "name": "RHEL-7.*",
+          "root-device-type": "ebs"
+        },
+        "owners": [
+          "309956199498"
+        ],
+        "most_recent": true
+      },
+      "subnet_filter": {
+        "filters": {
+          "tag:Class": "build"
+        },
+        "most_free": true,
+        "random": false
+      },
+      "vpc_filter": {
+        "filters": {
+          "tag:Class": "build"
+        }
+      },
+      "run_tags": {
+        "Name": "Packer: Jenkins Master [RHEL]"
+      },
+      "associate_public_ip_address": true,
+      "instance_type": "t3.medium",
+      "ssh_username": "ec2-user",
+      "ami_name": "jenkins-master-rhel-7-{{timestamp}}"
+    }
+  ],
+  "provisioners": [
+    {
+      "type": "ansible",
+      "playbook_file": "./jenkins-master.yml"
+    }
+  ]
+}

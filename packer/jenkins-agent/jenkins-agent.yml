@@ -1,0 +1,16 @@
+---
+- hosts: all
+  become: yes
+  tasks:
+    - name: Install Java
+      apt:
+        name: openjdk-8-jdk
+        state: present
+        update_cache: yes
+      when: ansible_os_family == "Debian" or ansible_os_family == "Ubuntu"
+
+    - name: Install RPM
+      yum:
+        name: openjdk-8
+        state: present
+      when: ansible_os_family == "RedHat"

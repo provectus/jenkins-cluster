@@ -1,0 +1,29 @@
+- name: Download Jenkins apt repository key.
+  get_url:
+    url: http://pkg.jenkins.io/debian/jenkins.io.key
+    dest: /tmp/jenkins.io.key
+    validate_certs: no
+    timeout: 60
+
+- name: Add Jenkins repository key.
+  apt_key:
+    file: /tmp/jenkins.io.key
+    state: present
+ 
+- name: Add Jenkins apt repository.
+  apt_repository:
+    repo: deb https://pkg.jenkins.io/debian binary/
+    state: present
+    update_cache: true
+
+- name: Download specific Jenkins version.
+  get_url:
+    url: "https://pkg.jenkins.io/debian/binary/jenkins_{{ jenkins_version }}_all.deb"
+    dest: "/tmp/jenkins_{{ jenkins_version }}_all.deb"
+    validate_certs: no
+    timeout: 60
+ 
+- name: Install our specific version of Jenkins.
+  apt:
+    deb: "/tmp/jenkins_{{ jenkins_version }}_all.deb"
+    state: present
